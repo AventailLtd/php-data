@@ -45,9 +45,16 @@ abstract class Etalon2
      * @var string|null timestamp default null
      */
     protected ?string $updated_at;
+    /**
+     * add to dbColumns if you want this to be used automatically
+     *
+     * @var string|null timestamp default null
+     */
+    protected ?string $deleted_at;
 
     /**
-     * soft delete bool
+     * soft delete bool - optional
+     * @deprecated please use $deleted_at instead
      *
      * @var int
      */
@@ -122,8 +129,7 @@ abstract class Etalon2
         if ($row === false) {
             throw new EtalonInstantiationException('id = "' . $id . '"');
         }
-        $t = static::getInstanceFromRow($row);
-        return $t;
+        return static::getInstanceFromRow($row);
     }
 
     /**
@@ -142,7 +148,7 @@ abstract class Etalon2
      * create instance from database row (array)
      *
      * @param array $row
-     * @return self
+     * @return static
      */
     protected static function getInstanceFromRowBase($row)
     {
@@ -220,7 +226,7 @@ abstract class Etalon2
      */
     protected function hasUpdatedAtColumn(): bool
     {
-        return in_array('updated_at', static::$dbColumns);
+        return in_array('updated_at', static::$dbColumns, true);
     }
 
     /**
@@ -230,7 +236,17 @@ abstract class Etalon2
      */
     protected function hasCreatedAtColumn(): bool
     {
-        return in_array('created_at', static::$dbColumns);
+        return in_array('created_at', static::$dbColumns, true);
+    }
+
+    /**
+     * if the class uses the standard created_at column, we set it on insert
+     *
+     * @return bool
+     */
+    protected function hasDeletedAtColumn(): bool
+    {
+        return in_array('deleted_at', static::$dbColumns, true);
     }
 
     /**
@@ -244,7 +260,7 @@ abstract class Etalon2
     }
 
     /**
-     * returns the changes that would be saved
+     * returns the changes that would have been saved
      *
      * @return array [column -> [old, new], ...] can be empty
      */
@@ -257,7 +273,10 @@ abstract class Etalon2
             } else {
                 $data = isset($this->$col) ? $this->$col : null; // php 7.4 uninitialized
             }
-            if ($data !== $this->dbCache[$col]) {
+            if (!$this->exists() && $data !== null) {
+                $this->saveDiff[$col] = [$this->dbCache[$col], $data];
+            } elseif ($data !== $this->dbCache[$col] && array_key_exists($col, $this->dbCache)) {
+                // Only changed if it exists in the cache and differs
                 $this->saveDiff[$col] = [$this->dbCache[$col], $data];
             }
         }
@@ -298,6 +317,11 @@ abstract class Etalon2
      */
     protected function onChangeAfterSave(array $changeList)
     {
+        // Detect HistoryAbstract trait - trait detection is hard when the class has extends, so we check the method for existence
+        if (method_exists($this, 'logChangesToHistory')) {
+            /** @var $this Etalon2|History */
+            $this->logChangesToHistory($changeList);
+        }
     }
 
     /**
@@ -310,7 +334,6 @@ abstract class Etalon2
      */
     public function save(bool $insert = false)
     {
-        $_changed = $this->savePreview(); // fill saveDiff (used by insert!)
         if (!$this->exists()) {
             if ($insert) {
                 $this->insert();
@@ -320,6 +343,7 @@ abstract class Etalon2
             }
         }
         $this->_newRecord = false;
+        $_changed = $this->savePreview(); // fill saveDiff (used by insert!)
 
         //van bármi változás? ha nincs, akkor kész (és siker)
         if (count($_changed) === 0) {
@@ -533,6 +557,9 @@ abstract class Etalon2
      */
     public function delete()
     {
+        if ($this->hasDeletedAtColumn()) {
+            $this->deleted_at = date('Y-m-d H:i:s');
+        }
         $this->deleted = 1;
         $this->save();
         $this->onDelete();
@@ -546,6 +573,17 @@ abstract class Etalon2
     protected function onDelete()
     {
 
+    }
+
+    /**
+     * @return bool
+     */
+    public function isDeleted(): bool
+    {
+        if ($this->hasDeletedAtColumn()) {
+            return $this->deleted_at !== null;
+        }
+        return $this->deleted !== 0;
     }
 
     /**
