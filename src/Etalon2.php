@@ -111,11 +111,6 @@ abstract class Etalon2
     protected bool $dateTriggersEnabled = true;
 
     /**
-     * @var Schema
-     */
-    private static Schema $_schema;
-
-    /**
      * the database connection
      *
      * @return PDO
