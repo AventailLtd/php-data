@@ -8,7 +8,6 @@ namespace DBLaci\Data;
  * Class EtalonInvalidCallException
  * @package DBLaci\Data
  */
-class EtalonInvalidCallException extends \Exception
+class EtalonInvalidCallException extends \LogicException
 {
-
 }

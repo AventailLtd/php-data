@@ -9,5 +9,4 @@ namespace DBLaci\Data;
  */
 class ExceptionEtalonParameterError extends \Exception
 {
-
 }

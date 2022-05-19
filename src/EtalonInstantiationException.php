@@ -10,5 +10,4 @@ namespace DBLaci\Data;
  */
 class EtalonInstantiationException extends ExceptionEtalonParameterError
 {
-
 }
