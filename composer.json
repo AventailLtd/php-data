@@ -1,5 +1,5 @@
 {
-    "name": "dblaci/data",
+    "name": "aventailltd/data",
     "type": "library",
     "description": "Database connections",
     "keywords": ["PDO", "DB"],
