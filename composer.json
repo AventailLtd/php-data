@@ -12,8 +12,7 @@
         }
     ],
     "require": {
-        "php": ">=7.4.0",
-        "ParticleBits/pdo": "~2.0"
+        "php": ">=7.4.0"
     },
     "autoload": {
         "psr-4": { "DBLaci\\Data\\": "src/" }

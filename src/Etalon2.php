@@ -2,7 +2,8 @@
 
 namespace DBLaci\Data;
 
-use Pb\PDO\Database;
+use DBLaci\Data\Database\Schema;
+use PDO;
 
 /**
  * Generic model class
@@ -110,11 +111,16 @@ abstract class Etalon2
     protected bool $dateTriggersEnabled = true;
 
     /**
+     * @var Schema
+     */
+    private static Schema $_schema;
+
+    /**
      * the database connection
      *
-     * @return Database
+     * @return PDO
      */
-    abstract protected static function getDB(): Database;
+    abstract protected static function getDB(): PDO;
 
     /**
      * @param int $id
@@ -123,12 +129,16 @@ abstract class Etalon2
      */
     public static function getInstanceByID(int $id)
     {
-        $db = static::getDB();
-        $sql = "SELECT * FROM " . static::TABLE . " WHERE `" . static::COL_ID . "` = " . $db->quote($id);
-        $row = $db->query($sql)->fetch();
+        $schema = static::getDatabaseSchema();
+        $sql = 'SELECT * FROM ' . $schema->quoteTableName(static::TABLE) . ' WHERE ' . $schema->quoteColumnName(static::COL_ID) . ' = :id';
+        $stmt = static::getDB()->prepare($sql);
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+
         if ($row === false) {
             throw new EtalonInstantiationException('id = "' . $id . '"');
         }
+
         return static::getInstanceFromRow($row);
     }
 
@@ -202,8 +212,12 @@ abstract class Etalon2
      */
     public function reloadDBCache(bool $updateProperties = true): self
     {
-        $db = static::getDB();
-        $row = $db->query('SELECT * FROM ' . static::TABLE . ' WHERE `' . static::COL_ID . '` = ' . $db->quote($this->id))->fetch();
+        $schema = static::getDatabaseSchema();
+        $sql = 'SELECT * FROM ' . $schema->quoteTableName(static::TABLE) . ' WHERE ' . $schema->quoteColumnName(static::COL_ID) . ' = :id';
+        $stmt = static::getDB()->prepare($sql);
+        $stmt->execute(['id' => $this->id]);
+        $row = $stmt->fetch();
+
         if ($row === false) {
             throw new EtalonInstantiationException('ID does not exist anymore: ' . $this->id);
         }
@@ -362,8 +376,13 @@ abstract class Etalon2
         foreach ($_changed as $col => $change0) {
             $update[$col] = $change0[1];
         }
+
         $db = static::getDB();
-        $db->update($update)->table(static::TABLE)->where(static::COL_ID, '=', $this->id)->execute();
+        $db->prepare(
+            static::getUpdateSql(array_keys($update),
+            static::getDatabaseSchema()->quoteColumnName(static::COL_ID) . ' = :id')
+        )->execute(array_merge($update, ['id' => $this->id]));
+
         // update cache - we assume the changes were made.
         foreach ($update as $col => $val) {
             $this->dbCache[$col] = $val;
@@ -395,7 +414,11 @@ abstract class Etalon2
         if (isset($this->id_to_set)) {
             $insert[static::COL_ID] = $this->id_to_set;
         }
-        $this->id = (int) static::getDB()->insert($insert)->into(static::TABLE)->execute(true);
+
+        $db = static::getDB();
+        $db->prepare(static::getInsertSql(array_keys($insert)))->execute($insert);
+        $this->id = $db->lastInsertId();
+
         // every column is changed.
         $this->saveDiff = [];
         foreach (static::$dbColumns as $col) {
@@ -612,8 +635,12 @@ abstract class Etalon2
         if (!$this->exists()) {
             return;
         }
-        $db = static::getDB();
-        $db->query('DELETE FROM ' . static::TABLE . ' WHERE `' . static::COL_ID . "` = " . $db->quote($this->id));
+
+        $schema = static::getDatabaseSchema();
+        $sql = 'DELETE FROM ' . $schema->quoteTableName(static::TABLE) . ' WHERE ' . $schema->quoteColumnName(static::COL_ID) . ' = :id';
+        $stmt = static::getDB()->prepare($sql);
+        $stmt->execute(['id' => $this->id]);
+
         unset($this->id);
     }
 
@@ -657,5 +684,71 @@ abstract class Etalon2
     public function setId(int $id)
     {
         $this->id_to_set = $id;
+    }
+
+    /**
+     * Returns the name of the DB driver.
+     *
+     * @return string
+     */
+    private static function getDatabaseDriverName(): string
+    {
+        return static::getDB()->getAttribute(PDO::ATTR_DRIVER_NAME);
+    }
+
+    /**
+     * Returns the schema object.
+     *
+     * @return Schema
+     */
+    public static function getDatabaseSchema(): Schema
+    {
+        return Schema::getSchemaByDriverName(static::getDatabaseDriverName());
+    }
+
+    /**
+     * Return "INSERT" sql statement.
+     *
+     * @param array $columns - Column list, e.g.: ['title', 'type', ...]
+     * @return string
+     */
+    private static function getInsertSql(array $columns): string
+    {
+        $schema = static::getDatabaseSchema();
+        $quotedColumns = [];
+        $placeholders = [];
+
+        foreach ($columns as $column) {
+            $quotedColumns[] = $schema->quoteColumnName($column);
+            $placeholders[] = ':' . $column;
+        }
+
+        $sql = 'INSERT INTO ' . $schema->quoteTableName(static::TABLE);
+        $sql .= ' (' . implode(', ', $quotedColumns) . ')';
+        $sql .= ' VALUES (' . implode(', ', $placeholders) . ')';
+
+        return $sql;
+    }
+
+    /**
+     * Return "UPDATE" sql statement.
+     *
+     * @param array $columns - Column list, e.g.: ['title', 'type', ...]
+     * @param string $where - WHERE statement without "WHERE" keyword.
+     * @return string
+     */
+    private static function getUpdateSql(array $columns, string $where): string
+    {
+        $schema = static::getDatabaseSchema();
+        $quotedColumnsWithPlaceholders = [];
+        foreach ($columns as $column) {
+            $quotedColumnsWithPlaceholders[] = $schema->quoteColumnName($column) . ' = :' . $column;
+        }
+
+        $sql = 'UPDATE ' . $schema->quoteTableName(static::TABLE);
+        $sql .= ' SET ' . implode(', ', $quotedColumnsWithPlaceholders);
+        $sql .= ' WHERE ' . $where;
+
+        return $sql;
     }
 }
