@@ -7,8 +7,6 @@ use PDO;
 
 /**
  * Generic model class
- *
- * @author DBLaci
  */
 abstract class Etalon2
 {
@@ -30,34 +28,28 @@ abstract class Etalon2
 
     /**
      * mandatory table id column (not necessarily equals 'id' see COL_ID const)
-     *
-     * @var int
      */
     public int $id;
     /**
      * add to dbColumns if you want this to be set automatically
-     *
-     * @var string|null timestamp default null
+     * mysql timestamp default null
      */
     protected ?string $created_at;
     /**
      * add to dbColumns if you want this to be set automatically
-     *
-     * @var string|null timestamp default null
+     * mysql timestamp default null
      */
     protected ?string $updated_at;
     /**
      * add to dbColumns if you want this to be used automatically
      *
-     * @var string|null timestamp default null
+     * mysql timestamp default null
      */
     protected ?string $deleted_at;
 
     /**
      * soft delete bool - optional
      * @deprecated please use $deleted_at instead
-     *
-     * @var int
      */
     protected int $deleted = 0;
 
@@ -75,15 +67,11 @@ abstract class Etalon2
 
     /**
      * you can set the needed id on insert. this is bad practice tough.
-     *
-     * @var ?int
      */
     protected ?int $id_to_set = null;
 
     /**
      * the database state (as we know)
-     *
-     * @var array
      */
     protected array $dbCache = [];
 
@@ -98,15 +86,11 @@ abstract class Etalon2
 
     /**
      * true when insert occured on last save
-     *
-     * @var bool
      */
     protected bool $_newRecord = false;
 
     /**
      * updated_at / created_at date updated automatically if this is true
-     *
-     * @var bool
      */
     protected bool $dateTriggersEnabled = true;
 
@@ -144,7 +128,7 @@ abstract class Etalon2
      * @param array $row
      * @return static
      */
-    public static function getInstanceFromRow($row)
+    public static function getInstanceFromRow(array $row)
     {
         return static::getInstanceFromRowBase($row);
     }
@@ -155,12 +139,9 @@ abstract class Etalon2
      * @param array $row
      * @return static
      */
-    protected static function getInstanceFromRowBase($row)
+    protected static function getInstanceFromRowBase(array $row)
     {
         $_t = new static;
-        if (!$row) {
-            return $_t;
-        }
         foreach (static::$dbColumns as $col) {
             if (!array_key_exists($col, $row)) {
                 // it is possible that in the db row the column is missing (yet).
@@ -187,7 +168,6 @@ abstract class Etalon2
      */
     public function onDBLoad()
     {
-
     }
 
     /**
@@ -278,9 +258,9 @@ abstract class Etalon2
         $this->saveDiff = [];
         foreach (static::$dbColumns as $col) {
             if ($col === static::COL_ID) {
-                $data = isset($this->id) ? $this->id : null;
+                $data = $this->id ?? null;
             } else {
-                $data = isset($this->$col) ? $this->$col : null; // php 7.4 uninitialized
+                $data = $this->$col ?? null; // php 7.4 uninitialized
             }
             if (!$this->exists() && $data !== null) {
                 $this->saveDiff[$col] = [$this->dbCache[$col], $data];
@@ -307,7 +287,7 @@ abstract class Etalon2
      * please call the parent if you override and return true if the parent returns true.
      * but don't return false if the parent returns false - if other changes were made.
      *
-     * @return boolean must return true if changes were made!
+     * @return bool must return true if changes were made!
      */
     protected function onChangeBeforeSave(): bool
     {
@@ -395,6 +375,10 @@ abstract class Etalon2
         if ($this->exists()) {
             throw new EtalonInsertNotAllowedException('Already exists. id: ' . $this->id);
         }
+
+        // in the change callbacks, the developer assumes changeDiff to be initialized.
+        $this->savePreview();
+
         $this->onBeforeInsert();
         $this->onChangeBeforeSave(); // every insert is an update also
         $insert = [];
@@ -575,8 +559,14 @@ abstract class Etalon2
      */
     public function delete()
     {
+        if ($this->isDeleted()) {
+            return;
+        }
         if ($this->hasDeletedAtColumn()) {
             $this->deleted_at = date('Y-m-d H:i:s');
+        } elseif (!in_array('deleted', static::$dbColumns, true)) {
+            // if neither deleted* column is used, soft delete cannot work.
+            throw new EtalonInvalidCallException('No deleted_at and deleted columnt. Soft delete is not available');
         }
         $this->deleted = 1;
         $this->save();
@@ -590,7 +580,6 @@ abstract class Etalon2
      */
     protected function onDelete()
     {
-
     }
 
     /**
@@ -606,6 +595,7 @@ abstract class Etalon2
 
     /**
      * set properties to default values (after delete for example)
+     * Note: you cannot use this with undefined default properties!
      */
     protected function resetValues()
     {
@@ -659,7 +649,7 @@ abstract class Etalon2
      * was the last save is an insert?
      * you don't want to use this without save - thus the exception is thrown.
      *
-     * @return boolean
+     * @return bool
      * @throws EtalonInvalidCallException
      */
     public function isInserted(): bool
@@ -702,9 +692,9 @@ abstract class Etalon2
     }
 
     /**
-     * Return "INSERT" sql statement.
+     * Return "INSERT" sql (prepared) statement string
      *
-     * @param array $columns - Column list, e.g.: ['title', 'type', ...]
+     * @param string[] $columns - Column list, e.g.: ['title', 'type', ...]
      * @return string
      */
     private static function getInsertSql(array $columns): string
