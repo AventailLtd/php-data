@@ -264,7 +264,7 @@ abstract class Etalon2
             }
             if (!$this->exists() && $data !== null) {
                 $this->saveDiff[$col] = [$this->dbCache[$col], $data];
-            } elseif ($data !== $this->dbCache[$col] && array_key_exists($col, $this->dbCache)) {
+            } elseif (array_key_exists($col, $this->dbCache) && $data !== $this->dbCache[$col]) {
                 // Only changed if it exists in the cache and differs
                 $this->saveDiff[$col] = [$this->dbCache[$col], $data];
             }
