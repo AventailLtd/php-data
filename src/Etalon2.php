@@ -115,7 +115,7 @@ abstract class Etalon2
         $row = $stmt->fetch();
 
         if ($row === false) {
-            throw new EtalonInstantiationException(static::TABLE . '.' . static::ID_COL . ' = "' . $id . '"');
+            throw new EtalonInstantiationException(static::TABLE . '.' . static::COL_ID . ' = "' . $id . '"');
         }
 
         return static::getInstanceFromRow($row);
