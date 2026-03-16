@@ -1,5 +1,7 @@
 <?php
 
+// TODO: mysql returns columnt as string in many cases, float for example... declare(strict_types = 1);
+
 namespace DBLaci\Data;
 
 use DBLaci\Data\Database\Schema;
@@ -45,7 +47,7 @@ abstract class Etalon2
      *
      * mysql timestamp default null
      */
-    protected ?string $deleted_at;
+    protected ?string $deleted_at = null;
 
     /**
      * soft delete bool - optional
@@ -150,7 +152,7 @@ abstract class Etalon2
                 continue;
             }
             if ($col === static::COL_ID) {
-                $_t->id = $row[$col];
+                $_t->id = (int) $row[$col];
             } else {
                 $_t->$col = $row[$col];
             }
@@ -166,7 +168,7 @@ abstract class Etalon2
      *
      * @abstract
      */
-    public function onDBLoad()
+    public function onDBLoad(): void
     {
     }
 
@@ -316,7 +318,7 @@ abstract class Etalon2
     /**
      * save data to database if changed
      *
-     * @param boolean $insert if you want to insert on not existing you have to set to true. this is to prevent accidental inserts
+     * @param bool $insert if you want to insert on not existing you have to set to true. this is to prevent accidental inserts
      *
      * @return void
      * @throws EtalonInsertNotAllowedException
@@ -386,9 +388,10 @@ abstract class Etalon2
             if ($col === static::COL_ID) {
                 continue; //ezt nem mentjük, vagy nem itt.
             }
-            if (isset($this->$col)) {
-                $insert[$col] = $this->$col;
-            }
+            // We expect every column property to have value (or null), it has to be set.
+            // If a value is not set on insert, the mysql will give it a default value, and
+            // it is not what we want, because the model state and the row could be inconsistent.
+            $insert[$col] = $this->$col;
         }
         if (isset($this->id_to_set)) {
             $insert[static::COL_ID] = $this->id_to_set;
@@ -396,7 +399,7 @@ abstract class Etalon2
 
         $db = static::getDB();
         $db->prepare(static::getInsertSql(array_keys($insert)))->execute($insert);
-        $this->id = $db->lastInsertId();
+        $this->id = (int) $db->lastInsertId();
 
         // every column is changed.
         $this->saveDiff = [];
@@ -418,7 +421,7 @@ abstract class Etalon2
     /**
      * is it inserted yet?
      *
-     * @return boolean
+     * @return bool
      */
     public function exists(): bool
     {
@@ -554,14 +557,12 @@ abstract class Etalon2
         }
     }
 
-    /**
-     * @throws EtalonInsertNotAllowedException
-     */
-    public function delete()
+    public function delete(): void
     {
         if ($this->isDeleted()) {
             return;
         }
+        $this->onBeforeDelete();
         if ($this->hasDeletedAtColumn()) {
             $this->deleted_at = date('Y-m-d H:i:s');
         } elseif (!in_array('deleted', static::$dbColumns, true)) {
@@ -571,6 +572,15 @@ abstract class Etalon2
         $this->deleted = 1;
         $this->save();
         $this->onDelete();
+    }
+
+    /**
+     * event callback
+     *
+     * Override if you want to cancel the delete (by throwing extension)
+     */
+    protected function onBeforeDelete(): void
+    {
     }
 
     /**
@@ -597,7 +607,7 @@ abstract class Etalon2
      * set properties to default values (after delete for example)
      * Note: you cannot use this with undefined default properties!
      */
-    protected function resetValues()
+    protected function resetValues(): void
     {
         $x = new static;
         foreach (static::$dbColumns as $col) {
@@ -615,7 +625,7 @@ abstract class Etalon2
      *
      * @return void
      */
-    public function deleteFromDB()
+    public function deleteFromDB(): void
     {
         if (!$this->exists()) {
             return;
@@ -632,7 +642,7 @@ abstract class Etalon2
     /**
      * lock table
      */
-    public static function lockTable()
+    public static function lockTable(): void
     {
         static::getDB()->exec('LOCK TABLE ' . static::TABLE . ' WRITE');
     }
@@ -640,7 +650,7 @@ abstract class Etalon2
     /**
      * unlock
      */
-    public static function unlockTable()
+    public static function unlockTable(): void
     {
         static::getDB()->exec('UNLOCK TABLES');
     }
@@ -666,7 +676,7 @@ abstract class Etalon2
     /**
      * @param int $id
      */
-    public function setId(int $id)
+    public function setId(int $id): void
     {
         $this->id_to_set = $id;
     }
